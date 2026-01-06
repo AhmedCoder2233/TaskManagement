@@ -249,7 +249,7 @@ export default function TaskDetail() {
   const canEditTask = () => {
     if (userRole === 'member') {
       // Members can only edit their own assigned tasks
-      return task?.assigned_to === currentUserId
+      return false
     }
     else if (userRole === 'production_admin') {
       // Both sales_admin and production_admin can edit all tasks
