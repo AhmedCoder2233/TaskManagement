@@ -40,7 +40,7 @@ export default function CreateTask() {
         .eq('id', user.id)
         .single()
 
-      if (profile?.role !== 'admin') {
+      if (profile?.role === 'member') {
         router.push('/dashboard')
         return
       }
