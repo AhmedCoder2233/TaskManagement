@@ -40,7 +40,14 @@ export default function CreateTask() {
         .eq('id', user.id)
         .single()
 
-      if (profile?.role === 'member') {
+      // Check if profile exists before accessing its properties
+      if (!profile) {
+        console.error('Profile not found')
+        router.push('/dashboard')
+        return
+      }
+
+      if (profile.role === 'member') {
         router.push('/dashboard')
         return
       }
