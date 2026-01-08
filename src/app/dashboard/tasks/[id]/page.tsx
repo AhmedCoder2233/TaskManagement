@@ -370,30 +370,47 @@ export default function TaskDetail() {
     }
   }
 
-  const toggleTaskCompletion = async () => {
-    if (!task || updatingCompletion) return
+ const toggleTaskCompletion = async () => {
+  if (!task || updatingCompletion) return
 
-    try {
-      setUpdatingCompletion(true)
-      const { error }: any = await supabase
-        .from('tasks')
-        .update({ 
-          completed: !task.completed,
-          completed_at: !task.completed ? new Date().toISOString() : null,
-          status: !task.completed ? 'completed' : 'pending',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', taskId)
+  try {
+    setUpdatingCompletion(true)
+    
+    // IMMEDIATELY update local state
+    setTask((prev:any) => ({
+      ...prev,
+      completed: !prev.completed,
+      status: !prev.completed ? 'completed' : 'pending',
+      completed_at: !prev.completed ? new Date().toISOString() : null
+    }))
 
-      if (error) {
-        console.error('Error updating task:', error)
-      }
-    } catch (error: any) {
+    // Then update database
+    const { error }: any = await supabase
+      .from('tasks')
+      .update({ 
+        completed: !task.completed,
+        completed_at: !task.completed ? new Date().toISOString() : null,
+        status: !task.completed ? 'completed' : 'pending',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', taskId)
+
+    if (error) {
       console.error('Error updating task:', error)
-    } finally {
-      setUpdatingCompletion(false)
+      // Rollback on error
+      setTask((prev:any) => ({
+        ...prev,
+        completed: !prev.completed,
+        status: !prev.completed ? 'completed' : 'pending',
+        completed_at: !prev.completed ? null : new Date().toISOString()
+      }))
     }
+  } catch (error: any) {
+    console.error('Error updating task:', error)
+  } finally {
+    setUpdatingCompletion(false)
   }
+}
 
   const handleEditTask = async () => {
     if (!editing) {
