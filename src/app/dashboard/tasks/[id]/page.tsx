@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSupabase } from '@/app/supabase-provider'
-import { ArrowLeft, MessageSquare, Paperclip, Send, User, Clock, Calendar, CheckCircle, Edit, Save, X, Trash2, Eye, Download, AlertCircle } from 'lucide-react'
+import { ArrowLeft, MessageSquare, Paperclip, Send, User, Clock, Calendar, CheckCircle, Edit, Save, X, Trash2, Eye, Download, AlertCircle, MoreVertical, Loader2, Circle } from 'lucide-react'
 import Link from 'next/link'
 
 export default function TaskDetail() {
@@ -25,11 +25,15 @@ export default function TaskDetail() {
   const [deleting, setDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [updatingCompletion, setUpdatingCompletion] = useState(false)
   
   // Refs for channels
   const taskChannelRef = useRef<any>(null)
   const commentsChannelRef = useRef<any>(null)
   const attachmentsChannelRef = useRef<any>(null)
+
+  // Ref for file input to prevent multiple clicks
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchData()
@@ -245,13 +249,13 @@ export default function TaskDetail() {
     attachmentsChannelRef.current = attachmentsChannel
   }
 
-  // Check if user can edit task
+  // Check if user can edit task - FIXED LOGIC
   const canEditTask = () => {
     if (userRole === 'member') {
-      // Members can only edit their own assigned tasks
+      // Members cannot edit tasks
       return false
     }
-    else if (userRole === 'production_admin') {
+    else if (userRole === 'sales_admin' || userRole === 'production_admin') {
       // Both sales_admin and production_admin can edit all tasks
       return true
     }
@@ -354,7 +358,10 @@ export default function TaskDetail() {
           file_size: file.size,
         })
 
-      e.target.value = ''
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
     } catch (error: any) {
       console.error('Upload failed:', error)
       setUploadError(`Upload failed: ${error.message}`)
@@ -364,9 +371,10 @@ export default function TaskDetail() {
   }
 
   const toggleTaskCompletion = async () => {
-    if (!task) return
+    if (!task || updatingCompletion) return
 
     try {
+      setUpdatingCompletion(true)
       const { error }: any = await supabase
         .from('tasks')
         .update({ 
@@ -382,6 +390,8 @@ export default function TaskDetail() {
       }
     } catch (error: any) {
       console.error('Error updating task:', error)
+    } finally {
+      setUpdatingCompletion(false)
     }
   }
 
@@ -479,31 +489,42 @@ export default function TaskDetail() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
+  // Check if user can mark task as complete
+  const canMarkComplete = () => {
+    if (userRole === 'member') {
+      return task.assigned_to === currentUserId
+    }
+    else if (userRole === 'sales_admin' || userRole === 'production_admin') {
+      return true
+    }
+    return false
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-black mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading task details...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-gray-200 rounded-full"></div>
+            <div className="absolute top-0 left-0 w-16 h-16 border-4 border-black border-t-transparent rounded-full animate-spin"></div>
+          </div>
       </div>
     )
   }
 
   if (!task) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
         <div className="text-center max-w-md px-4">
-          <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-6">
-            <AlertCircle className="h-8 w-8 text-gray-400" />
+          <div className="mx-auto w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl flex items-center justify-center mb-6 shadow-inner">
+            <AlertCircle className="h-10 w-10 text-gray-400" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-3">Task not found</h2>
           <p className="text-gray-600 mb-8">The task you're looking for doesn't exist or you don't have permission to view it.</p>
           <Link
             href="/dashboard"
-            className="inline-flex items-center px-5 py-2.5 bg-black text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+            className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-gray-900 to-black text-white font-medium rounded-xl hover:opacity-90 transition-all shadow-lg hover:shadow-xl"
           >
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="h-5 w-5 mr-2" />
             Back to Dashboard
           </Link>
         </div>
@@ -512,16 +533,16 @@ export default function TaskDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <Link
               href="/dashboard"
-              className="inline-flex items-center text-gray-600 hover:text-gray-900 font-medium"
+              className="inline-flex items-center text-gray-600 hover:text-gray-900 font-medium transition-colors group"
             >
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" />
               Back to Dashboard
             </Link>
             
@@ -531,10 +552,10 @@ export default function TaskDetail() {
               {(canEditTask() && !editing) && (
                 <button
                   onClick={() => setEditing(true)}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                  className="inline-flex items-center px-4 py-2.5 bg-white text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-all duration-200 shadow-sm border border-gray-200 hover:shadow"
                 >
                   <Edit className="h-4 w-4 mr-2" />
-                  Edit
+                  Edit Task
                 </button>
               )}
 
@@ -542,25 +563,32 @@ export default function TaskDetail() {
               {canDeleteTask() && (
                 <div className="relative">
                   {showDeleteConfirm ? (
-                    <div className="flex flex-col gap-3 bg-red-50 px-4 py-3 rounded-lg border border-red-100 absolute right-0 top-12 w-64 z-10 shadow-lg">
-                      <div className="flex items-start gap-2">
-                        <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div className="absolute right-0 top-12 z-50 bg-white rounded-xl shadow-lg border border-gray-200 p-4 w-80">
+                      <div className="flex items-start gap-3 mb-4">
+                        <div className="p-2 bg-red-100 rounded-lg">
+                          <AlertCircle className="h-5 w-5 text-red-600" />
+                        </div>
                         <div>
-                          <p className="text-sm font-semibold text-red-700 mb-1">Delete this task?</p>
-                          <p className="text-xs text-red-600 mb-3">This will permanently delete the task and all related comments & attachments.</p>
+                          <p className="font-semibold text-gray-900 mb-1">Delete this task?</p>
+                          <p className="text-sm text-gray-600">This will permanently delete the task and all related comments & attachments.</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         <button
                           onClick={handleDeleteTask}
                           disabled={deleting}
-                          className="flex-1 px-3 py-1.5 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                          className="flex-1 px-4 py-2.5 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {deleting ? 'Deleting...' : 'Delete'}
+                          {deleting ? (
+                            <span className="flex items-center justify-center">
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Deleting...
+                            </span>
+                          ) : 'Delete Task'}
                         </button>
                         <button
                           onClick={() => setShowDeleteConfirm(false)}
-                          className="flex-1 px-3 py-1.5 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300 transition-colors text-sm"
+                          className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors"
                         >
                           Cancel
                         </button>
@@ -569,8 +597,7 @@ export default function TaskDetail() {
                   ) : (
                     <button
                       onClick={() => setShowDeleteConfirm(true)}
-                      disabled={deleting}
-                      className="inline-flex items-center px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                      className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white font-medium rounded-xl hover:opacity-90 transition-all duration-200 shadow-lg hover:shadow-xl"
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
                       Delete Task
@@ -581,47 +608,56 @@ export default function TaskDetail() {
 
               {/* Show message for sales_admin (can edit but not delete) */}
               {userRole === 'sales_admin' && !canDeleteTask() && (
-                <div className="text-sm text-gray-500 italic px-3 py-1.5 bg-gray-100 rounded-lg border border-gray-200">
-                  No Delete or Edit permission
+                <div className="text-sm text-gray-500 px-3 py-1.5 bg-gray-100 rounded-lg">
+                  Can edit but not delete
                 </div>
               )}
             </div>
           </div>
 
           {/* Task Header */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
+          <div className="bg-gradient-to-br from-white to-gray-50 rounded-2xl shadow-sm border border-gray-200 p-8 mb-8">
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-8">
               <div className="flex-1">
-                <div className="flex items-start gap-4 mb-4">
-                  {editing ? (
-                    <input
-                      type="text"
-                      name="title"
-                      value={editForm.title}
-                      onChange={handleEditChange}
-                      className="text-3xl font-bold text-gray-900 bg-white border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent w-full"
-                      placeholder="Task title"
-                    />
-                  ) : (
-                    <h1 className="text-3xl font-bold text-gray-900">{task.title}</h1>
-                  )}
+                <div className="flex items-start justify-between gap-4 mb-6">
+                  <div className="flex-1">
+                    {editing ? (
+                      <input
+                        type="text"
+                        name="title"
+                        value={editForm.title}
+                        onChange={handleEditChange}
+                        className="text-3xl lg:text-4xl font-bold text-gray-900 bg-white border border-gray-300 rounded-xl px-5 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent w-full"
+                        placeholder="Task title"
+                      />
+                    ) : (
+                      <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">{task.title}</h1>
+                    )}
+                  </div>
                   
-                  {/* Mark as complete button - available for assignee and admins */}
-                  {(userRole === 'member' && task.assigned_to === currentUserId) || 
-                   userRole === 'sales_admin' || 
-                   userRole === 'production_admin' ? (
+                  {/* Mark as complete button - FIXED CLICK ISSUE */}
+                  {canMarkComplete() && (
                     <button
                       onClick={toggleTaskCompletion}
-                      className="focus:outline-none flex-shrink-0"
+                      disabled={updatingCompletion}
+                      className="focus:outline-none flex-shrink-0 group relative"
                       title={task.completed ? 'Mark as pending' : 'Mark as complete'}
                     >
-                      {task.completed ? (
-                        <CheckCircle className="h-8 w-8 text-green-600" />
+                      {updatingCompletion ? (
+                        <div className="w-12 h-12 flex items-center justify-center">
+                          <Loader2 className="h-6 w-6 text-gray-400 animate-spin" />
+                        </div>
+                      ) : task.completed ? (
+                        <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+                          <CheckCircle className="h-7 w-7 text-white" />
+                        </div>
                       ) : (
-                        <CheckCircle className="h-8 w-8 text-gray-300 hover:text-gray-400" />
+                        <div className="w-12 h-12 rounded-full border-4 border-gray-300 group-hover:border-gray-400 transition-colors flex items-center justify-center shadow-sm group-hover:shadow">
+                          <Circle className="h-6 w-6 text-gray-300 group-hover:text-gray-400" />
+                        </div>
                       )}
                     </button>
-                  ) : null}
+                  )}
                 </div>
                 
                 {editing ? (
@@ -630,100 +666,108 @@ export default function TaskDetail() {
                     value={editForm.description || ''}
                     onChange={handleEditChange}
                     rows={3}
-                    className="w-full mb-6 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                    className="w-full mb-6 px-5 py-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent bg-white"
                     placeholder="Task description"
                   />
                 ) : (
-                  <p className="text-gray-600 mb-6">{task.description || 'No description provided'}</p>
+                  <p className="text-gray-600 text-lg mb-8 leading-relaxed">{task.description || 'No description provided'}</p>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-sm font-medium text-gray-500 mb-1">Assigned To</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 shadow-sm border border-gray-200">
+                    <p className="text-sm font-medium text-gray-500 mb-3">Assigned To</p>
                     <div className="flex items-center">
-                      <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center mr-3">
-                        <User className="h-4 w-4" />
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 text-white flex items-center justify-center mr-3 shadow-sm">
+                        <User className="h-5 w-5" />
                       </div>
                       <p className="font-semibold text-gray-900">{task.assignee?.full_name || 'Unassigned'}</p>
                     </div>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-sm font-medium text-gray-500 mb-1">Assigned By</p>
+                  
+                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 shadow-sm border border-gray-200">
+                    <p className="text-sm font-medium text-gray-500 mb-3">Assigned By</p>
                     <div className="flex items-center">
-                      <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center mr-3">
-                        <User className="h-4 w-4" />
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 text-white flex items-center justify-center mr-3 shadow-sm">
+                        <User className="h-5 w-5" />
                       </div>
-                      <p className="font-semibold text-gray-900">{task.creator?.full_name || 'Unassigned'}</p>
+                      <p className="font-semibold text-gray-900">{task.creator?.full_name || 'Unknown'}</p>
                     </div>
                   </div>
 
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-sm font-medium text-gray-500 mb-1">Status</p>
+                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 shadow-sm border border-gray-200">
+                    <p className="text-sm font-medium text-gray-500 mb-3">Status</p>
                     {editing ? (
                       <select
                         name="status"
                         value={editForm.status}
                         onChange={handleEditChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
                       >
                         <option value="pending">Pending</option>
                         <option value="in_progress">In Progress</option>
                         <option value="completed">Completed</option>
                       </select>
                     ) : (
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
+                      <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold ${
                         task.status === 'completed' 
-                          ? 'bg-green-100 text-green-800'
+                          ? 'bg-gradient-to-r from-green-50 to-green-100 text-green-800 border border-green-200'
                           : task.status === 'in_progress'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-gray-100 text-gray-800'
+                          ? 'bg-gradient-to-r from-blue-50 to-blue-100 text-blue-800 border border-blue-200'
+                          : 'bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 border border-gray-200'
                       }`}>
-                        {(task.status || '').replace('_', ' ')}
+                        {(task.status || 'pending').replace('_', ' ')}
                       </span>
                     )}
                   </div>
 
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-sm font-medium text-gray-500 mb-1">Priority</p>
+                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 shadow-sm border border-gray-200">
+                    <p className="text-sm font-medium text-gray-500 mb-3">Priority</p>
                     {editing ? (
                       <select
                         name="priority"
                         value={editForm.priority}
                         onChange={handleEditChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
                       >
                         <option value="low">Low</option>
                         <option value="medium">Medium</option>
                         <option value="high">High</option>
                       </select>
                     ) : (
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
+                      <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold ${
                         task.priority === 'high' 
-                          ? 'bg-red-100 text-red-800'
+                          ? 'bg-gradient-to-r from-red-50 to-red-100 text-red-800 border border-red-200'
                           : task.priority === 'medium'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-blue-100 text-blue-800'
+                          ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 text-yellow-800 border border-yellow-200'
+                          : 'bg-gradient-to-r from-blue-50 to-blue-100 text-blue-800 border border-blue-200'
                       }`}>
-                        {task.priority}
+                        {task.priority || 'low'}
                       </span>
                     )}
                   </div>
 
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-sm font-medium text-gray-500 mb-1">Due Date</p>
+                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 shadow-sm border border-gray-200">
+                    <p className="text-sm font-medium text-gray-500 mb-3">Due Date</p>
                     {editing ? (
                       <input
                         type="date"
                         name="due_date"
                         value={editForm.due_date}
                         onChange={handleEditChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
                       />
                     ) : (
                       <div className="flex items-center">
-                        <Calendar className="h-4 w-4 text-gray-400 mr-2" />
-                        <span className="font-semibold text-gray-900">
-                          {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No due date'}
+                        <div className="p-2 bg-gray-100 rounded-lg mr-3">
+                          <Calendar className="h-5 w-5 text-gray-600" />
+                        </div>
+                        <span className={`font-semibold ${new Date(task.due_date) < new Date() && !task.completed ? 'text-red-600' : 'text-gray-900'}`}>
+                          {task.due_date ? new Date(task.due_date).toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          }) : 'No due date'}
                         </span>
                       </div>
                     )}
@@ -733,17 +777,17 @@ export default function TaskDetail() {
 
               {/* Edit Actions - Show only when editing */}
               {editing && (
-                <div className="flex lg:flex-col gap-2">
+                <div className="flex lg:flex-col gap-3">
                   <button
                     onClick={handleEditTask}
-                    className="inline-flex items-center justify-center px-4 py-2 bg-black text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                    className="inline-flex items-center justify-center px-5 py-3 bg-gradient-to-r from-gray-900 to-black text-white font-medium rounded-xl hover:opacity-90 transition-all shadow-lg hover:shadow-xl"
                   >
                     <Save className="h-4 w-4 mr-2" />
                     Save Changes
                   </button>
                   <button
                     onClick={cancelEdit}
-                    className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                    className="inline-flex items-center justify-center px-5 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-all shadow-sm hover:shadow"
                   >
                     <X className="h-4 w-4 mr-2" />
                     Cancel
@@ -759,49 +803,61 @@ export default function TaskDetail() {
           {/* Left Column - Comments */}
           <div className="lg:col-span-2 space-y-8">
             {/* Comments Section */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-              <div className="px-6 py-5 border-b border-gray-200">
+            <div className="bg-gradient-to-br from-white to-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
                     <MessageSquare className="h-5 w-5 text-gray-500 mr-3" />
                     <h2 className="text-xl font-semibold text-gray-900">Comments</h2>
-                    <span className="ml-3 px-2.5 py-0.5 bg-gray-100 text-gray-800 text-sm font-medium rounded-full">
+                    <span className="ml-3 px-3 py-1 bg-gray-900 text-white text-sm font-medium rounded-full shadow-sm">
                       {comments.length}
                     </span>
                   </div>
-                  <div className="text-sm text-gray-500">
-                    Real-time chat
+                  <div className="flex items-center text-sm text-gray-500">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
+                    Live updates
                   </div>
                 </div>
               </div>
               
               {/* Comments List */}
-              <div className="p-6">
+              <div className="p-6 max-h-[500px] overflow-y-auto">
                 {comments.length === 0 ? (
                   <div className="text-center py-12">
-                    <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-600">No comments yet. Start the conversation!</p>
+                    <MessageSquare className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium mb-2">No comments yet</p>
+                    <p className="text-gray-500 text-sm">Start the conversation!</p>
                   </div>
                 ) : (
                   <div className="space-y-6">
                     {comments.map((comment: any) => (
                       <div key={comment.id} className="animate-fadeIn">
-                        <div className="flex items-start space-x-3">
-                          <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center flex-shrink-0">
-                            <span className="font-semibold">
+                        <div className="flex items-start space-x-4">
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                            <span className="font-semibold text-lg">
                               {comment.user?.full_name?.[0]?.toUpperCase() || 'U'}
                             </span>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-1">
-                              <p className="font-semibold text-gray-900">
-                                {comment.user?.full_name || 'Unknown User'}
-                              </p>
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  {comment.user?.full_name || 'Unknown User'}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  {comment.user?.email}
+                                </p>
+                              </div>
                               <p className="text-sm text-gray-500">
-                                {new Date(comment.created_at).toLocaleString()}
+                                {new Date(comment.created_at).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
                               </p>
                             </div>
-                            <p className="text-gray-700 bg-gray-50 rounded-lg p-4">
+                            <p className="text-gray-700 bg-gray-50 rounded-xl p-4">
                               {comment.content}
                             </p>
                           </div>
@@ -812,20 +868,20 @@ export default function TaskDetail() {
                 )}
               </div>
 
-              {/* Comment Input - Available for all logged in users */}
-              <div className="px-6 py-5 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+              {/* Comment Input */}
+              <div className="px-6 py-5 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-white">
                 <form onSubmit={handleSubmitComment} className="flex gap-3">
                   <input
                     type="text"
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     placeholder="Type your comment..."
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                    className="flex-1 px-5 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
                   />
                   <button
                     type="submit"
                     disabled={!newComment.trim()}
-                    className="px-6 py-3 bg-black text-white font-medium rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-6 py-3 bg-gradient-to-r from-gray-900 to-black text-white font-medium rounded-xl hover:opacity-90 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Send className="h-5 w-5" />
                   </button>
@@ -837,13 +893,13 @@ export default function TaskDetail() {
           {/* Right Column */}
           <div className="space-y-8">
             {/* Attachments Section */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-              <div className="px-6 py-5 border-b border-gray-200">
+            <div className="bg-gradient-to-br from-white to-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
                     <Paperclip className="h-5 w-5 text-gray-500 mr-3" />
                     <h2 className="text-xl font-semibold text-gray-900">Attachments</h2>
-                    <span className="ml-3 px-2.5 py-0.5 bg-gray-100 text-gray-800 text-sm font-medium rounded-full">
+                    <span className="ml-3 px-3 py-1 bg-gray-900 text-white text-sm font-medium rounded-full shadow-sm">
                       {attachments.length}
                     </span>
                   </div>
@@ -852,67 +908,69 @@ export default function TaskDetail() {
               
               <div className="p-6">
                 {/* Upload Area - Available for assignee and admins */}
-                {(userRole === 'member' && task.assigned_to === currentUserId) || 
+                {((userRole === 'member' && task.assigned_to === currentUserId) || 
                  userRole === 'sales_admin' || 
-                 userRole === 'production_admin' ? (
+                 userRole === 'production_admin') && (
                   <div className="mb-6">
-                    <label className="block">
-                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-gray-400 transition-colors cursor-pointer">
-                        <Paperclip className="h-8 w-8 text-gray-400 mx-auto mb-3" />
-                        <p className="text-sm font-medium text-gray-700 mb-1">
-                          Drop files here or click to upload
+                    <label className="block cursor-pointer">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        onChange={handleFileUpload}
+                        disabled={uploading}
+                        className="hidden"
+                        id="file-upload"
+                      />
+                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-gray-400 transition-colors bg-gradient-to-br from-gray-50 to-white">
+                        <Paperclip className="h-10 w-10 text-gray-400 mx-auto mb-4" />
+                        <p className="text-sm font-medium text-gray-700 mb-2">
+                          {uploading ? 'Uploading file...' : 'Drop files here or click to upload'}
                         </p>
                         <p className="text-xs text-gray-500">Max file size: 50MB</p>
-                        <input
-                          type="file"
-                          onChange={handleFileUpload}
-                          disabled={uploading}
-                          className="hidden"
-                          id="file-upload"
-                        />
+                        {uploading && (
+                          <div className="mt-4 flex justify-center">
+                            <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
+                          </div>
+                        )}
                       </div>
                     </label>
                     
                     {uploadError && (
-                      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <div className="flex items-center gap-2 text-red-700">
-                          <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                          <p className="text-sm font-medium">{uploadError}</p>
+                      <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0" />
+                          <p className="text-sm text-red-700">{uploadError}</p>
                         </div>
                       </div>
                     )}
-                    
-                    {uploading && (
-                      <div className="flex items-center justify-center mt-4">
-                        <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-black mr-3"></div>
-                        <p className="text-sm text-gray-600">Uploading...</p>
-                      </div>
-                    )}
                   </div>
-                ) : null}
+                )}
 
                 {/* Attachments List */}
                 {attachments.length === 0 ? (
                   <div className="text-center py-8">
-                    <Paperclip className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-600">No attachments yet</p>
+                    <Paperclip className="h-14 w-14 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium mb-2">No attachments yet</p>
+                    <p className="text-gray-500 text-sm">Upload files to share with the team</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {attachments.map((attachment: any) => (
-                      <div key={attachment.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors animate-fadeIn">
-                        <div className="flex items-center space-x-3 flex-1 min-w-0">
-                          <Paperclip className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                      <div key={attachment.id} className="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:bg-gray-50 transition-colors animate-fadeIn">
+                        <div className="flex items-center space-x-4 flex-1 min-w-0">
+                          <div className="p-2.5 bg-gray-100 rounded-lg">
+                            <Paperclip className="h-5 w-5 text-gray-600" />
+                          </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
+                            <p className="text-sm font-medium text-gray-900 truncate mb-1">
                               {attachment.file_name}
                             </p>
-                            <div className="flex items-center text-xs text-gray-500 mt-1">
+                            <div className="flex items-center text-xs text-gray-500">
                               <span>{formatFileSize(attachment.file_size || 0)}</span>
                               {attachment.user?.full_name && (
                                 <>
                                   <span className="mx-2">•</span>
-                                  <span>Uploaded by {attachment.user.full_name}</span>
+                                  <span>By {attachment.user.full_name}</span>
                                 </>
                               )}
                             </div>
@@ -923,15 +981,15 @@ export default function TaskDetail() {
                             href={attachment.file_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-2 text-gray-600 hover:text-black transition-colors"
-                            title="View"
+                            className="p-2 text-gray-600 hover:text-black hover:bg-gray-100 rounded-lg transition-colors"
+                            title="Preview"
                           >
                             <Eye className="h-4 w-4" />
                           </a>
                           <a
                             href={attachment.file_url}
                             download
-                            className="p-2 text-gray-600 hover:text-black transition-colors"
+                            className="p-2 text-gray-600 hover:text-black hover:bg-gray-100 rounded-lg transition-colors"
                             title="Download"
                           >
                             <Download className="h-4 w-4" />
@@ -945,31 +1003,87 @@ export default function TaskDetail() {
             </div>
 
             {/* Task Info */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Task Information</h3>
-              <div className="space-y-4">
+            <div className="bg-gradient-to-br from-white to-gray-50 rounded-2xl shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-6">Task Information</h3>
+              <div className="space-y-5">
                 <div>
-                  <p className="text-sm font-medium text-gray-500 mb-1">Created By</p>
-                  <p className="font-semibold text-gray-900">{task.creator?.full_name || 'Unknown'}</p>
+                  <p className="text-sm font-medium text-gray-500 mb-2">Created By</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center shadow-sm">
+                      <User className="h-4 w-4 text-white" />
+                    </div>
+                    <p className="font-semibold text-gray-900">{task.creator?.full_name || 'Unknown'}</p>
+                  </div>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-500 mb-1">Created Date</p>
-                  <p className="font-semibold text-gray-900">
-                    {new Date(task.created_at).toLocaleDateString()} at {new Date(task.created_at).toLocaleTimeString()}
-                  </p>
+                  <p className="text-sm font-medium text-gray-500 mb-2">Created Date</p>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gray-100 rounded-lg">
+                      <Calendar className="h-4 w-4 text-gray-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">
+                        {new Date(task.created_at).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {new Date(task.created_at).toLocaleTimeString('en-US', {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-500 mb-1">Last Updated</p>
-                  <p className="font-semibold text-gray-900">
-                    {new Date(task.updated_at).toLocaleDateString()} at {new Date(task.updated_at).toLocaleTimeString()}
-                  </p>
+                  <p className="text-sm font-medium text-gray-500 mb-2">Last Updated</p>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gray-100 rounded-lg">
+                      <Clock className="h-4 w-4 text-gray-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">
+                        {new Date(task.updated_at).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {new Date(task.updated_at).toLocaleTimeString('en-US', {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 {task.completed_at && (
                   <div>
-                    <p className="text-sm font-medium text-gray-500 mb-1">Completed Date</p>
-                    <p className="font-semibold text-gray-900">
-                      {new Date(task.completed_at).toLocaleDateString()} at {new Date(task.completed_at).toLocaleTimeString()}
-                    </p>
+                    <p className="text-sm font-medium text-gray-500 mb-2">Completed Date</p>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-green-100 rounded-lg">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {new Date(task.completed_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {new Date(task.completed_at).toLocaleTimeString('en-US', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
