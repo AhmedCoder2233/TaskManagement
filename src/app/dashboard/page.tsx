@@ -3,26 +3,31 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSupabase } from '@/app/supabase-provider'
-import { CheckCircle, Circle, Clock, AlertCircle, Plus, Trash2, Tag, Shield, User, Edit } from 'lucide-react'
+import { CheckCircle, Circle, Clock, AlertCircle, Plus, Trash2, Tag, Shield, User, Edit, ChevronRight, MoreVertical, Filter, Search, Loader2, Calendar } from 'lucide-react'
 import Link from 'next/link'
 
 export default function Dashboard() {
     const router = useRouter()
     const supabase = useSupabase()
     const [tasks, setTasks] = useState<any[]>([])
+    const [filteredTasks, setFilteredTasks] = useState<any[]>([])
     const [userRole, setUserRole] = useState<string | null>(null)
     const [loading, setLoading] = useState(true)
     const [currentUserId, setCurrentUserId] = useState<string | null>(null)
     const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null)
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
+    const [searchQuery, setSearchQuery] = useState('')
+    const [statusFilter, setStatusFilter] = useState('all')
+    const [priorityFilter, setPriorityFilter] = useState('all')
+    const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null)
 
     const taskChannelRef = useRef<any>(null)
 
     const roleLabelMap: Record<string, string> = {
-  member: 'Member',
-  production_admin: 'Admin',
-  sales_admin: 'Sales Admin',
-};
+        member: 'Member',
+        production_admin: 'Admin',
+        sales_admin: 'Sales Admin',
+    };
 
     useEffect(() => {
         fetchUserAndTasks()
@@ -38,6 +43,10 @@ export default function Dashboard() {
             setupRealtimeSubscription()
         }
     }, [currentUserId])
+
+    useEffect(() => {
+        filterTasks()
+    }, [tasks, searchQuery, statusFilter, priorityFilter])
 
     const fetchUserAndTasks = async () => {
         try {
@@ -71,11 +80,9 @@ export default function Dashboard() {
                 `)
                 .order('created_at', { ascending: false })
 
-            // If user is member, show only assigned tasks
             if (profile?.role === 'member') {
                 query = query.eq('assigned_to', user.id)
             }
-            // For sales_admin and production_admin, show all tasks
 
             const { data: tasksData, error }: any = await query
 
@@ -85,6 +92,7 @@ export default function Dashboard() {
             }
 
             setTasks(tasksData || [])
+            setFilteredTasks(tasksData || [])
         } catch (error) {
             console.error('Error fetching data:', error)
         } finally {
@@ -106,7 +114,6 @@ export default function Dashboard() {
                     console.log('Task realtime update:', payload)
 
                     if (payload.eventType === 'INSERT') {
-                        // Fetch new task with relations
                         const { data: newTask }: any = await supabase
                             .from('tasks')
                             .select(`
@@ -118,7 +125,6 @@ export default function Dashboard() {
                             .single()
 
                         if (newTask) {
-                            // Check if user should see this task based on their role
                             const shouldShow = shouldShowTask(newTask)
                             if (shouldShow) {
                                 setTasks(prev => [newTask, ...prev])
@@ -126,7 +132,6 @@ export default function Dashboard() {
                         }
                     }
                     else if (payload.eventType === 'UPDATE') {
-                        // Update the specific task
                         setTasks(prev => prev.map(task =>
                             task.id === payload.new.id ? { ...task, ...payload.new } : task
                         ))
@@ -148,9 +153,34 @@ export default function Dashboard() {
             return task.assigned_to === currentUserId
         }
         else if (userRole === 'sales_admin' || userRole === 'production_admin') {
-            return true // Both can see all tasks
+            return true
         }
         return false
+    }
+
+    const filterTasks = () => {
+        let filtered = tasks
+
+        // Apply search filter
+        if (searchQuery) {
+            filtered = filtered.filter(task =>
+                task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                task.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                task.assignee?.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
+            )
+        }
+
+        // Apply status filter (only pending and completed)
+        if (statusFilter !== 'all') {
+            filtered = filtered.filter(task => task.status === statusFilter)
+        }
+
+        // Apply priority filter
+        if (priorityFilter !== 'all') {
+            filtered = filtered.filter(task => task.priority === priorityFilter)
+        }
+
+        setFilteredTasks(filtered)
     }
 
     const handleTaskClick = (taskId: string) => {
@@ -164,6 +194,7 @@ export default function Dashboard() {
 
     const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React.MouseEvent) => {
         e.stopPropagation()
+        setUpdatingTaskId(taskId)
         try {
             const updateData: any = {
                 completed: !completed,
@@ -182,25 +213,24 @@ export default function Dashboard() {
             }
         } catch (error) {
             console.error('Error updating task:', error)
+        } finally {
+            setUpdatingTaskId(null)
         }
     }
 
     const handleDeleteTask = async (taskId: string) => {
         setDeletingTaskId(taskId)
         try {
-            // First delete related comments
             await supabase
                 .from('comments')
                 .delete()
                 .eq('task_id', taskId)
 
-            // Then delete related attachments
             await supabase
                 .from('attachments')
                 .delete()
                 .eq('task_id', taskId)
 
-            // Finally delete the task
             const { error }: any = await supabase
                 .from('tasks')
                 .delete()
@@ -210,7 +240,6 @@ export default function Dashboard() {
                 console.error('Error deleting task:', error)
             }
 
-            // Task will be removed from list via realtime subscription
             setShowDeleteConfirm(null)
         } catch (error) {
             console.error('Error deleting task:', error)
@@ -219,32 +248,26 @@ export default function Dashboard() {
         }
     }
 
-    // Check if user can delete task
     const canDeleteTask = () => {
-        // Only production_admin can delete tasks
         return userRole === 'production_admin'
     }
 
-    // Check if user can edit task
     const canEditTask = (task: any) => {
         if (userRole === 'member') {
-            // Members can only edit their own assigned tasks
             return task.assigned_to === currentUserId
         }
         else if (userRole === 'sales_admin' || userRole === 'production_admin') {
-            // Both sales_admin and production_admin can edit all tasks
             return true
         }
         return false
     }
 
-    // Check if user can create tasks
     const canCreateTasks = () => {
         return userRole === 'sales_admin' || userRole === 'production_admin'
     }
 
     const getRoleDisplayText = () => {
-        switch(userRole) {
+        switch (userRole) {
             case 'member':
                 return 'Member - View your assigned tasks only'
             case 'production_admin':
@@ -257,7 +280,7 @@ export default function Dashboard() {
     }
 
     const getTaskCountText = () => {
-        switch(userRole) {
+        switch (userRole) {
             case 'member':
                 return 'Your Tasks'
             case 'production_admin':
@@ -267,270 +290,415 @@ export default function Dashboard() {
                 return 'Tasks'
         }
     }
-    
+
+    const getPriorityColor = (priority: string) => {
+        switch (priority) {
+            case 'high':
+                return { bg: 'bg-red-50', text: 'text-red-700', icon: '🔴' }
+            case 'medium':
+                return { bg: 'bg-yellow-50', text: 'text-yellow-700', icon: '🟡' }
+            case 'low':
+                return { bg: 'bg-blue-50', text: 'text-blue-700', icon: '🔵' }
+            default:
+                return { bg: 'bg-gray-50', text: 'text-gray-700', icon: '⚪' }
+        }
+    }
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'completed':
+                return { bg: 'bg-green-50', text: 'text-green-700', icon: '✓' }
+            case 'pending':
+                return { bg: 'bg-gray-100', text: 'text-gray-700', icon: '⏱️' }
+            default:
+                return { bg: 'bg-gray-50', text: 'text-gray-700', icon: '' }
+        }
+    }
+
+    // Status counts for stats
+    const pendingCount = tasks.filter(task => task.status === 'pending').length
+    const completedCount = tasks.filter(task => task.status === 'completed').length
+    const highPriorityCount = tasks.filter(task => task.priority === 'high').length
 
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
                 <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-black mx-auto"></div>
-                    <p className="mt-4 text-gray-600">Loading your tasks...</p>
+                    <div className="relative">
+                        <div className="w-16 h-16 border-4 border-gray-200 rounded-full"></div>
+                        <div className="absolute top-0 left-0 w-16 h-16 border-4 border-black border-t-transparent rounded-full animate-spin"></div>
+                    </div>
                 </div>
             </div>
         )
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                        <div className="flex items-center gap-3 mb-2">
-                            <h1 className="text-3xl font-bold text-gray-900">Task Dashboard</h1>
-                         <span
-  className={`px-3 py-1 rounded-full text-sm font-semibold ${
-    userRole === 'member'
-      ? 'bg-gray-100 text-gray-800 border border-gray-300'
-      : userRole === 'production_admin'
-      ? 'bg-blue-100 text-blue-800 border border-blue-300'
-      : userRole === 'sales_admin'
-      ? 'bg-green-100 text-green-800 border border-green-300'
-      : 'bg-gray-100 text-gray-800 border border-gray-300'
-  }`}
->
-  {roleLabelMap[userRole ?? 'member']}
-</span>
+                {/* Header Section */}
+                <div className="mb-8">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                        <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">Task Dashboard</h1>
+                                <span className={`px-4 py-1.5 rounded-full text-sm font-semibold bg-gradient-to-r ${
+                                    userRole === 'member'
+                                        ? 'from-gray-700 to-gray-800'
+                                        : userRole === 'production_admin'
+                                        ? 'from-blue-500 to-blue-600'
+                                        : userRole === 'sales_admin'
+                                        ? 'from-emerald-500 to-emerald-600'
+                                        : 'from-gray-700 to-gray-800'
+                                } text-white shadow-sm`}>
+                                    {roleLabelMap[userRole ?? 'member']}
+                                </span>
+                            </div>
+                            <p className="text-gray-600 max-w-2xl">
+                                {getRoleDisplayText()}
+                            </p>
                         </div>
-                        <p className="text-gray-600">
-                            {getRoleDisplayText()}
-                        </p>
+
+                        {canCreateTasks() && (
+                            <Link
+                                href="/dashboard/create"
+                                className="group inline-flex items-center px-6 py-3.5 bg-gradient-to-r from-gray-900 to-black text-white font-semibold rounded-xl hover:opacity-90 transition-all duration-300 shadow-lg hover:shadow-xl active:scale-[0.98]"
+                            >
+                                <Plus className="h-5 w-5 mr-2 group-hover:rotate-90 transition-transform duration-300" />
+                                Create New Task
+                            </Link>
+                        )}
                     </div>
-                    
-                    {/* Show create button for sales_admin and production_admin */}
-                    {canCreateTasks() && (
-                        <Link 
-                            href="/dashboard/create" 
-                            className="inline-flex items-center px-5 py-3 bg-black text-white font-medium rounded-lg hover:bg-gray-800 transition-all duration-200 shadow-sm hover:shadow"
-                        >
-                            <Plus className="h-5 w-5 mr-2" />
-                            Create New Task
-                        </Link>
-                    )}
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="px-6 py-5 border-b border-gray-200 bg-gray-50">
+                {/* Quick Stats Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div className="bg-gradient-to-br from-white to-gray-50 rounded-2xl p-6 shadow-sm border border-gray-200">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-medium text-gray-600">Pending Tasks</p>
+                                <p className="text-3xl font-bold text-gray-900 mt-2">{pendingCount}</p>
+                            </div>
+                            <div className="h-12 w-12 bg-gray-100 rounded-xl flex items-center justify-center">
+                                <Clock className="h-6 w-6 text-gray-600" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-white to-gray-50 rounded-2xl p-6 shadow-sm border border-gray-200">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-medium text-gray-600">Completed Tasks</p>
+                                <p className="text-3xl font-bold text-gray-900 mt-2">{completedCount}</p>
+                            </div>
+                            <div className="h-12 w-12 bg-green-100 rounded-xl flex items-center justify-center">
+                                <CheckCircle className="h-6 w-6 text-green-600" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-white to-gray-50 rounded-2xl p-6 shadow-sm border border-gray-200">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-medium text-gray-600">High Priority</p>
+                                <p className="text-3xl font-bold text-gray-900 mt-2">{highPriorityCount}</p>
+                            </div>
+                            <div className="h-12 w-12 bg-red-100 rounded-xl flex items-center justify-center">
+                                <AlertCircle className="h-6 w-6 text-red-600" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Search and Filters Section */}
+                <div className="bg-gradient-to-br from-white to-gray-50 rounded-2xl p-6 shadow-sm border border-gray-200 mb-8">
+                    <div className="flex flex-col md:flex-row gap-4">
+                        {/* Search Input */}
+                        <div className="flex-1 relative">
+                            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="Search tasks by title, description, or assignee..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-400 focus:border-transparent focus:outline-none transition-all duration-200"
+                            />
+                        </div>
+
+                        {/* Status Filter (Pending/Completed only) */}
+                        <div className="flex gap-3">
+                            <div className="relative">
+                                <select
+                                    value={statusFilter}
+                                    onChange={(e) => setStatusFilter(e.target.value)}
+                                    className="appearance-none w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-400 focus:border-transparent focus:outline-none transition-all duration-200"
+                                >
+                                    <option value="all">All Status</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="completed">Completed</option>
+                                </select>
+                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                                    <Filter className="h-4 w-4 text-gray-400" />
+                                </div>
+                            </div>
+
+                            <div className="relative">
+                                <select
+                                    value={priorityFilter}
+                                    onChange={(e) => setPriorityFilter(e.target.value)}
+                                    className="appearance-none w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-400 focus:border-transparent focus:outline-none transition-all duration-200"
+                                >
+                                    <option value="all">All Priority</option>
+                                    <option value="high">High</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="low">Low</option>
+                                </select>
+                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                                    <Filter className="h-4 w-4 text-gray-400" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Tasks Container */}
+                <div className="bg-gradient-to-br from-white to-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="px-6 py-5 border-b border-gray-200">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="flex items-center">
                                 <h2 className="text-xl font-semibold text-gray-900">
-                                   {getTaskCountText()}
+                                    {getTaskCountText()}
                                 </h2>
-                                <span className="ml-3 px-3 py-1 bg-gray-100 text-gray-800 text-sm font-medium rounded-full">
-                                    {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
+                                <span className="ml-3 px-3 py-1.5 bg-gray-900 text-white text-sm font-medium rounded-full shadow-sm">
+                                    {filteredTasks.length} {filteredTasks.length === 1 ? 'task' : 'tasks'}
                                 </span>
+                                {filteredTasks.length !== tasks.length && (
+                                    <span className="ml-2 text-sm text-gray-500">
+                                        (filtered from {tasks.length})
+                                    </span>
+                                )}
                             </div>
-                            <div className="text-sm text-gray-500">
-                                Real-time updates enabled
+                            <div className="flex items-center text-sm text-gray-500">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
+                                Real-time updates active
                             </div>
                         </div>
                     </div>
 
-                    <div className="divide-y divide-gray-200">
-                        {tasks.length === 0 ? (
+                    <div className="divide-y divide-gray-200/50">
+                        {filteredTasks.length === 0 ? (
                             <div className="px-6 py-16 text-center">
-                                <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                                    <CheckCircle className="h-8 w-8 text-gray-400" />
+                                <div className="mx-auto w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl flex items-center justify-center mb-6 shadow-inner">
+                                    <CheckCircle className="h-10 w-10 text-gray-400" />
                                 </div>
-                                <h3 className="text-lg font-medium text-gray-900 mb-2">No tasks found</h3>
-                                <p className="text-gray-600 max-w-md mx-auto mb-6">
-                                    {userRole === 'member'
-                                        ? 'You have no tasks assigned yet.'
-                                        : userRole === 'production_admin' || userRole === 'sales_admin'
-                                        ? 'No tasks found in the system.'
-                                        : 'No tasks found.'}
+                                <h3 className="text-xl font-semibold text-gray-900 mb-3">No tasks found</h3>
+                                <p className="text-gray-600 max-w-md mx-auto mb-8">
+                                    {searchQuery || statusFilter !== 'all' || priorityFilter !== 'all'
+                                        ? 'No tasks match your current filters. Try adjusting your search criteria.'
+                                        : userRole === 'member'
+                                            ? 'You have no tasks assigned yet. Tasks will appear here once assigned.'
+                                            : 'No tasks found in the system. Create your first task to get started.'}
                                 </p>
-                                {canCreateTasks() && (
+                                {(searchQuery || statusFilter !== 'all' || priorityFilter !== 'all') ? (
+                                    <button
+                                        onClick={() => {
+                                            setSearchQuery('')
+                                            setStatusFilter('all')
+                                            setPriorityFilter('all')
+                                        }}
+                                        className="inline-flex items-center px-5 py-2.5 bg-gray-900 text-white font-medium rounded-xl hover:bg-black transition-colors shadow-sm"
+                                    >
+                                        Clear Filters
+                                    </button>
+                                ) : canCreateTasks() && (
                                     <Link
                                         href="/dashboard/create"
-                                        className="inline-flex items-center px-5 py-2.5 bg-black text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                                        className="inline-flex items-center px-5 py-2.5 bg-gray-900 text-white font-medium rounded-xl hover:bg-black transition-colors shadow-sm hover:shadow"
                                     >
                                         <Plus className="h-4 w-4 mr-2" />
-                                        Create your first task
+                                        Create First Task
                                     </Link>
                                 )}
                             </div>
                         ) : (
-                            tasks.map((task: any) => (
-                                <div
-                                    key={task.id}
-                                    className="px-6 py-5 hover:bg-gray-50 cursor-pointer transition-colors group"
-                                    onClick={() => handleTaskClick(task.id)}
-                                >
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex items-start space-x-4 flex-1 min-w-0">
-                                            <button
-                                                onClick={(e) => toggleTaskCompletion(task.id, task.completed, e)}
-                                                className="focus:outline-none flex-shrink-0 mt-1"
-                                                title={task.completed ? 'Mark as pending' : 'Mark as complete'}
-                                            >
-                                                {task.completed ? (
-                                                    <CheckCircle className="h-6 w-6 text-green-600" />
-                                                ) : (
-                                                    <Circle className="h-6 w-6 text-gray-300 hover:text-gray-400" />
-                                                )}
-                                            </button>
+                            filteredTasks.map((task: any) => {
+                                const priorityColor = getPriorityColor(task.priority)
+                                const statusColor = getStatusColor(task.status)
 
+                                return (
+                                    <div
+                                        key={task.id}
+                                        className="group px-6 py-5 hover:bg-gray-50 transition-all duration-200 cursor-pointer"
+                                        onClick={() => handleTaskClick(task.id)}
+                                    >
+                                        <div className="flex items-start gap-4">
+                                            {/* Task Status Indicator */}
+                                            <div className="relative">
+                                                <button
+                                                    onClick={(e) => toggleTaskCompletion(task.id, task.completed, e)}
+                                                    className="focus:outline-none flex-shrink-0 relative group/checkbox"
+                                                    disabled={updatingTaskId === task.id}
+                                                    title={task.completed ? 'Mark as pending' : 'Mark as complete'}
+                                                >
+                                                    {updatingTaskId === task.id ? (
+                                                        <div className="w-7 h-7 flex items-center justify-center">
+                                                            <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
+                                                        </div>
+                                                    ) : task.completed ? (
+                                                        <div className="w-7 h-7 bg-green-100 rounded-full flex items-center justify-center border-2 border-green-500 group-hover/checkbox:bg-green-200 transition-colors">
+                                                            <CheckCircle className="h-4 w-4 text-green-600" />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-7 h-7 rounded-full border-2 border-gray-300 group-hover/checkbox:border-gray-500 transition-colors flex items-center justify-center">
+                                                            <Circle className="h-4 w-4 text-gray-300 group-hover/checkbox:text-gray-500" />
+                                                        </div>
+                                                    )}
+                                                </button>
+                                            </div>
+
+                                            {/* Task Content */}
                                             <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <h3 className="text-base font-semibold text-gray-900 truncate">{task.title}</h3>
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                                                        task.priority === 'high' 
-                                                            ? 'bg-red-100 text-red-800'
-                                                            : task.priority === 'medium'
-                                                            ? 'bg-yellow-100 text-yellow-800'
-                                                            : 'bg-blue-100 text-blue-800'
-                                                    }`}>
-                                                        {task.priority}
-                                                    </span>
-                                                </div>
-
-                                                <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                                                    {task.description || 'No description provided'}
-                                                </p>
-
-                                                <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
-                                                    <div className="flex items-center">
-                                                        <UserCircle className="h-4 w-4 mr-1.5 text-gray-400" />
-                                                        <span className="font-medium">Assignee:</span>
-                                                        <span className="ml-1.5">{task.assignee?.full_name || 'Unassigned'}</span>
+                                                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <h3 className="text-lg font-semibold text-gray-900 group-hover:text-black transition-colors truncate">
+                                                                {task.title}
+                                                            </h3>
+                                                            <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${priorityColor.bg} ${priorityColor.text}`}>
+                                                                {priorityColor.icon} {task.priority} priority
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-sm text-gray-600 line-clamp-2">
+                                                            {task.description || 'No description provided'}
+                                                        </p>
                                                     </div>
 
-                                                    <div className="flex items-center">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${statusColor.bg} ${statusColor.text}`}>
+                                                            {statusColor.icon} {task.status === 'completed' ? 'Completed' : 'Pending'}
+                                                        </span>
+                                                        <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
+                                                    </div>
+                                                </div>
+
+                                                {/* Task Meta */}
+                                                <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center">
+                                                            <User className="h-3 w-3 text-gray-500" />
+                                                        </div>
+                                                        <span className="font-medium">Assigned to:</span>
+                                                        <span className="text-gray-800">{task.assignee?.full_name || 'Unassigned'}</span>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center">
+                                                            <User className="h-3 w-3 text-gray-500" />
+                                                        </div>
                                                         <span className="font-medium">Created by:</span>
-                                                        <span className="ml-1.5">{task.creator?.full_name || 'Unknown'}</span>
+                                                        <span className="text-gray-800">{task.creator?.full_name || 'Unknown'}</span>
                                                     </div>
 
                                                     {task.due_date && (
-                                                        <div className="flex items-center">
-                                                            <Clock className="h-4 w-4 mr-1.5 text-gray-400" />
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center">
+                                                                <Calendar className="h-3 w-3 text-gray-500" />
+                                                            </div>
                                                             <span className="font-medium">Due:</span>
-                                                            <span className="ml-1.5">{new Date(task.due_date).toLocaleDateString()}</span>
+                                                            <span className={`${new Date(task.due_date) < new Date() && !task.completed ? 'text-red-600 font-semibold' : 'text-gray-800'}`}>
+                                                                {new Date(task.due_date).toLocaleDateString('en-US', {
+                                                                    month: 'short',
+                                                                    day: 'numeric'
+                                                                })}
+                                                            </span>
                                                         </div>
                                                     )}
-
-                                                    <div className="flex items-center">
-                                                        <Calendar className="h-4 w-4 mr-1.5 text-gray-400" />
-                                                        <span>{new Date(task.created_at).toLocaleDateString()}</span>
-                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center gap-3 ml-4">
-                                            <div className="flex flex-col items-end gap-2">
-                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
-                                                    task.status === 'completed' 
-                                                        ? 'bg-green-100 text-green-800'
-                                                        : task.status === 'in_progress'
-                                                        ? 'bg-yellow-100 text-yellow-800'
-                                                        : 'bg-gray-100 text-gray-800'
-                                                }`}>
-                                                    {task.status?.replace('_', ' ') || task.status}
-                                                </span>
+                                        {/* Action Buttons */}
+                                        <div className="flex items-center justify-between mt-4">
+                                            <div className="flex items-center gap-3">
+                                                {canEditTask(task) && (
+                                                    <button
+                                                        onClick={(e) => handleEditTask(task.id, e)}
+                                                        className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-black hover:bg-gray-100 rounded-lg transition-colors"
+                                                    >
+                                                        <Edit className="h-4 w-4" />
+                                                        Edit
+                                                    </button>
+                                                )}
 
-                                                <div className="flex items-center gap-2">
-                                                 
+                                                {userRole === 'sales_admin' && (
+                                                    <span className="text-xs text-gray-500 px-3 py-1.5 bg-gray-50 rounded-lg">
+                                                        Can assign but not delete
+                                                    </span>
+                                                )}
+                                            </div>
 
-                                                    {/* Delete button only for production_admin */}
-                                                    {canDeleteTask() && (
-                                                        <div className="relative">
-                                                            {showDeleteConfirm === task.id ? (
-                                                                <div className="flex flex-col gap-2 bg-red-50 px-4 py-3 rounded-lg border border-red-100">
-                                                                    <p className="text-sm text-red-700 font-medium">
-                                                                        Delete this task permanently?
-                                                                    </p>
-                                                                    <div className="flex items-center gap-3">
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation()
-                                                                                handleDeleteTask(task.id)
-                                                                            }}
-                                                                            disabled={deletingTaskId === task.id}
-                                                                            className="text-xs px-3 py-1.5 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                        >
-                                                                            {deletingTaskId === task.id ? (
-                                                                                <span className="flex items-center">
-                                                                                    <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-white" fill="none" viewBox="0 0 24 24">
-                                                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                                                    </svg>
-                                                                                    Deleting...
-                                                                                </span>
-                                                                            ) : 'Yes, Delete'}
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation()
-                                                                                setShowDeleteConfirm(null)
-                                                                            }}
-                                                                            className="text-xs px-3 py-1.5 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300 transition-colors"
-                                                                        >
-                                                                            Cancel
-                                                                        </button>
-                                                                    </div>
-                                                                    <p className="text-xs text-red-600 mt-1">
-                                                                        This action cannot be undone.
-                                                                    </p>
-                                                                </div>
-                                                            ) : (
+                                            {canDeleteTask() && (
+                                                <div className="relative">
+                                                    {showDeleteConfirm === task.id ? (
+                                                        <div className="absolute right-0 top-0 z-10 bg-red-50 px-4 py-3 rounded-xl shadow-lg border border-red-100">
+                                                            <p className="text-sm text-red-700 font-medium mb-2">
+                                                                Delete this task permanently?
+                                                            </p>
+                                                            <div className="flex items-center gap-2">
                                                                 <button
                                                                     onClick={(e) => {
                                                                         e.stopPropagation()
-                                                                        setShowDeleteConfirm(task.id)
+                                                                        handleDeleteTask(task.id)
                                                                     }}
-                                                                    className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
-                                                                    title="Delete task"
+                                                                    disabled={deletingTaskId === task.id}
+                                                                    className="px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                                                 >
-                                                                    <Trash2 className="h-4 w-4" />
+                                                                    {deletingTaskId === task.id ? 'Deleting...' : 'Delete'}
                                                                 </button>
-                                                            )}
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        setShowDeleteConfirm(null)
+                                                                    }}
+                                                                    className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-300 transition-colors"
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                    )}
-
-                                                    {/* Show message for sales_admin that they can't delete */}
-                                                    {userRole === 'sales_admin' && (
-                                                        <div className="text-xs text-gray-500 italic px-2 py-1 bg-gray-100 rounded">
-                                                            You can only assign tasks
-                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                setShowDeleteConfirm(task.id)
+                                                            }}
+                                                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                            title="Delete task"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
                                                     )}
                                                 </div>
-                                            </div>
-
-                                            {task.priority === 'high' && (
-                                                <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
                                             )}
                                         </div>
                                     </div>
-                                </div>
-                            ))
+                                )
+                            })
                         )}
                     </div>
+                </div>
+
+                {/* Footer Info */}
+                <div className="mt-8 text-center text-sm text-gray-500">
+                    <p>
+                        Showing {filteredTasks.length} of {tasks.length} tasks • 
+                        <span className="inline-flex items-center ml-2">
+                            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-1.5"></span>
+                            Real-time updates enabled
+                        </span>
+                    </p>
                 </div>
             </div>
         </div>
     )
 }
-
-// Helper component for user icon
-const UserCircle = ({ className }: { className?: string }) => (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-    </svg>
-)
-
-// Helper component for calendar icon
-const Calendar = ({ className }: { className?: string }) => (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-    </svg>
-)
