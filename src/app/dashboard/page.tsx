@@ -192,31 +192,37 @@ export default function Dashboard() {
         router.push(`/dashboard/tasks/${taskId}/edit`)
     }
 
-    const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React.MouseEvent) => {
-        e.stopPropagation()
-        setUpdatingTaskId(taskId)
-        try {
-            const updateData: any = {
-                completed: !completed,
-                completed_at: !completed ? new Date().toISOString() : null,
-                status: !completed ? 'completed' : 'pending',
-                updated_at: new Date().toISOString()
-            }
-
-            const { error }: any = await supabase
-                .from('tasks')
-                .update(updateData)
-                .eq('id', taskId)
-
-            if (error) {
-                console.error('Error updating task:', error)
-            }
-        } catch (error) {
-            console.error('Error updating task:', error)
-        } finally {
-            setUpdatingTaskId(null)
+const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setUpdatingTaskId(taskId)
+    try {
+        const updateData: any = {
+            completed: !completed,
+            completed_at: !completed ? new Date().toISOString() : null,
+            status: !completed ? 'completed' : 'pending',
+            updated_at: new Date().toISOString()
         }
+
+        // ADD THIS LINE - update UI immediately
+        setTasks(prev => prev.map(task =>
+            task.id === taskId ? { ...task, ...updateData } : task
+        ))
+
+        const { error }: any = await supabase
+            .from('tasks')
+            .update(updateData)
+            .eq('id', taskId)
+
+        if (error) {
+            console.error('Error updating task:', error)
+            // Optional: rollback on error
+        }
+    } catch (error) {
+        console.error('Error updating task:', error)
+    } finally {
+        setUpdatingTaskId(null)
     }
+}
 
     const handleDeleteTask = async (taskId: string) => {
         setDeletingTaskId(taskId)
