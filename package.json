@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@react-email/components": "^1.0.4",
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/auth-ui-react": "^0.4.7",
     "@supabase/auth-ui-shared": "^0.1.8",
@@ -17,13 +18,17 @@
     "date-fns": "^4.1.0",
     "lucide-react": "^0.562.0",
     "next": "14.2.16",
+    "nodemailer": "^7.0.12",
     "react": "^18",
     "react-dom": "^18",
     "react-dropzone": "^14.3.8",
+    "react-email": "^5.2.1",
+    "resend": "^6.7.0",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/nodemailer": "^7.0.4",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "postcss": "^8",
