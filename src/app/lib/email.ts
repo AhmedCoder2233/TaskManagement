@@ -218,12 +218,6 @@ export async function sendTaskAssignmentEmail({
                 </div>
               </div>
               
-              <div class="button-container">
-                <a href="${taskLink}" class="view-button">
-                  View Task Details
-                </a>
-              </div>
-              
               <div class="footer">
                 <p>This is an automated notification from your task management system.</p>
                 <p>© ${new Date().getFullYear()} Task Management System</p>
@@ -247,10 +241,7 @@ export async function sendTaskAssignmentEmail({
       -------------
       Assigned By: ${assignerName || 'Administrator'}
       Priority: ${priorityStyle.text}
-      Due Date: ${dueDateFormatted}
-      
-      View Task: ${taskLink}
-      
+      Due Date: ${dueDateFormatted}      
       ---
       
       This is an automated notification from your task management system.
@@ -290,4 +281,5 @@ export async function testEmailConnection() {
   } catch (error) {
     return { success: false, error: 'Email server connection failed' }
   }
+
 }
