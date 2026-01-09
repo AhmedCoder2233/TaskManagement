@@ -1,22 +1,40 @@
+// app/supabase-provider.tsx
 'use client'
 
-import { createContext, useContext, useState } from 'react'
-import { createClient } from './lib/supabase'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from './lib/supabasetypes'
+import { createContext, useContext, useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
+import { useRouter } from 'next/navigation'
 
-type SupabaseContext = {
-  supabase: SupabaseClient<Database>
-}
+const Context = createContext<any>(undefined)
 
-const Context = createContext<SupabaseContext | undefined>(undefined)
+export default function SupabaseProvider({ children }: { children: React.ReactNode }) {
+  const [supabase] = useState(() => createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  ))
+  const router = useRouter()
 
-export default function SupabaseProvider({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const [supabase] = useState(() => createClient())
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event:any, session:any) => {
+      console.log('Auth state changed:', event)
+      
+      if (event === 'SIGNED_IN') {
+        router.refresh()
+        router.push('/dashboard')
+      }
+      
+      if (event === 'SIGNED_OUT') {
+        router.refresh()
+        router.push('/auth/signin')
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [router, supabase])
 
   return (
     <Context.Provider value={{ supabase }}>
