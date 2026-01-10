@@ -258,11 +258,8 @@ const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React
         return userRole === 'production_admin'
     }
 
-    const canEditTask = (task: any) => {
-        if (userRole === 'member') {
-            return task.assigned_to === currentUserId
-        }
-        else if (userRole === 'production_admin') {
+    const canEditTask = () => {
+        if (userRole === 'production_admin') {
             return true
         }
         return false
@@ -626,7 +623,7 @@ const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React
                                         {/* Action Buttons */}
                                         <div className="flex items-center justify-between mt-4">
                                             <div className="flex items-center gap-3">
-                                                {canEditTask(task) && (
+                                                {canEditTask() && (
                                                     <button
                                                         onClick={(e) => handleEditTask(task.id, e)}
                                                         className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-black hover:bg-gray-100 rounded-lg transition-colors"
