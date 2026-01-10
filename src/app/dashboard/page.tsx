@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSupabase } from '@/app/supabase-provider'
-import { CheckCircle, Circle, Clock, AlertCircle, Plus, Trash2, Tag, Shield, User, Edit, ChevronRight, MoreVertical, Filter, Search, Loader2, Calendar } from 'lucide-react'
+import { CheckCircle, Circle, Clock, AlertCircle, Plus, Trash2, Tag, Shield, User, Edit, ChevronRight, MoreVertical, Filter, Search, Loader2, Calendar, Flame } from 'lucide-react'
 import Link from 'next/link'
 
 export default function Dashboard() {
@@ -91,8 +91,52 @@ export default function Dashboard() {
                 return
             }
 
-            setTasks(tasksData || [])
-            setFilteredTasks(tasksData || [])
+            // Sort tasks: pending first (today's due dates first), completed last
+            const sortedTasks = [...(tasksData || [])].sort((a, b) => {
+                // First separate completed and pending tasks
+                if (a.status === 'completed' && b.status !== 'completed') return 1
+                if (a.status !== 'completed' && b.status === 'completed') return -1
+                
+                // If both are completed, sort by completion date (most recent first)
+                if (a.status === 'completed' && b.status === 'completed') {
+                    return new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()
+                }
+                
+                // Now only pending tasks remain
+                const today = new Date()
+                today.setHours(0, 0, 0, 0)
+                
+                const aDueDate = a.due_date ? new Date(a.due_date) : null
+                const bDueDate = b.due_date ? new Date(b.due_date) : null
+                
+                // Check if due date is today
+                const aIsToday = aDueDate ? 
+                    aDueDate.getDate() === today.getDate() &&
+                    aDueDate.getMonth() === today.getMonth() &&
+                    aDueDate.getFullYear() === today.getFullYear() : false
+                    
+                const bIsToday = bDueDate ? 
+                    bDueDate.getDate() === today.getDate() &&
+                    bDueDate.getMonth() === today.getMonth() &&
+                    bDueDate.getFullYear() === today.getFullYear() : false
+                
+                // Today's tasks come first
+                if (aIsToday && !bIsToday) return -1
+                if (!aIsToday && bIsToday) return 1
+                
+                // Then sort by due date (earliest first)
+                if (aDueDate && bDueDate) {
+                    return aDueDate.getTime() - bDueDate.getTime()
+                }
+                if (aDueDate && !bDueDate) return -1
+                if (!aDueDate && bDueDate) return 1
+                
+                // Finally sort by creation date (newest first)
+                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            })
+
+            setTasks(sortedTasks || [])
+            setFilteredTasks(sortedTasks || [])
         } catch (error) {
             console.error('Error fetching data:', error)
         } finally {
@@ -127,17 +171,27 @@ export default function Dashboard() {
                         if (newTask) {
                             const shouldShow = shouldShowTask(newTask)
                             if (shouldShow) {
-                                setTasks(prev => [newTask, ...prev])
+                                // Sort tasks after adding new one
+                                setTasks(prev => {
+                                    const updated = [newTask, ...prev]
+                                    return sortTasksByDueDate(updated)
+                                })
                             }
                         }
                     }
                     else if (payload.eventType === 'UPDATE') {
-                        setTasks(prev => prev.map(task =>
-                            task.id === payload.new.id ? { ...task, ...payload.new } : task
-                        ))
+                        setTasks(prev => {
+                            const updated = prev.map(task =>
+                                task.id === payload.new.id ? { ...task, ...payload.new } : task
+                            )
+                            return sortTasksByDueDate(updated)
+                        })
                     }
                     else if (payload.eventType === 'DELETE') {
-                        setTasks(prev => prev.filter(task => task.id !== payload.old.id))
+                        setTasks(prev => {
+                            const updated = prev.filter(task => task.id !== payload.old.id)
+                            return sortTasksByDueDate(updated)
+                        })
                     }
                 }
             )
@@ -146,6 +200,51 @@ export default function Dashboard() {
             })
 
         taskChannelRef.current = taskChannel
+    }
+
+    const sortTasksByDueDate = (tasksArray: any[]) => {
+        return [...tasksArray].sort((a, b) => {
+            // First separate completed and pending tasks
+            if (a.status === 'completed' && b.status !== 'completed') return 1
+            if (a.status !== 'completed' && b.status === 'completed') return -1
+            
+            // If both are completed, sort by completion date (most recent first)
+            if (a.status === 'completed' && b.status === 'completed') {
+                return new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()
+            }
+            
+            // Now only pending tasks remain
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            
+            const aDueDate = a.due_date ? new Date(a.due_date) : null
+            const bDueDate = b.due_date ? new Date(b.due_date) : null
+            
+            // Check if due date is today
+            const aIsToday = aDueDate ? 
+                aDueDate.getDate() === today.getDate() &&
+                aDueDate.getMonth() === today.getMonth() &&
+                aDueDate.getFullYear() === today.getFullYear() : false
+                
+            const bIsToday = bDueDate ? 
+                bDueDate.getDate() === today.getDate() &&
+                bDueDate.getMonth() === today.getMonth() &&
+                bDueDate.getFullYear() === today.getFullYear() : false
+            
+            // Today's tasks come first
+            if (aIsToday && !bIsToday) return -1
+            if (!aIsToday && bIsToday) return 1
+            
+            // Then sort by due date (earliest first)
+            if (aDueDate && bDueDate) {
+                return aDueDate.getTime() - bDueDate.getTime()
+            }
+            if (aDueDate && !bDueDate) return -1
+            if (!aDueDate && bDueDate) return 1
+            
+            // Finally sort by creation date (newest first)
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        })
     }
 
     const shouldShowTask = (task: any) => {
@@ -192,37 +291,39 @@ export default function Dashboard() {
         router.push(`/dashboard/tasks/${taskId}/edit`)
     }
 
-const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setUpdatingTaskId(taskId)
-    try {
-        const updateData: any = {
-            completed: !completed,
-            completed_at: !completed ? new Date().toISOString() : null,
-            status: !completed ? 'completed' : 'pending',
-            updated_at: new Date().toISOString()
-        }
+    const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React.MouseEvent) => {
+        e.stopPropagation()
+        setUpdatingTaskId(taskId)
+        try {
+            const updateData: any = {
+                completed: !completed,
+                completed_at: !completed ? new Date().toISOString() : null,
+                status: !completed ? 'completed' : 'pending',
+                updated_at: new Date().toISOString()
+            }
 
-        // ADD THIS LINE - update UI immediately
-        setTasks(prev => prev.map(task =>
-            task.id === taskId ? { ...task, ...updateData } : task
-        ))
+            // Update UI immediately
+            setTasks(prev => {
+                const updated = prev.map(task =>
+                    task.id === taskId ? { ...task, ...updateData } : task
+                )
+                return sortTasksByDueDate(updated)
+            })
 
-        const { error }: any = await supabase
-            .from('tasks')
-            .update(updateData)
-            .eq('id', taskId)
+            const { error }: any = await supabase
+                .from('tasks')
+                .update(updateData)
+                .eq('id', taskId)
 
-        if (error) {
+            if (error) {
+                console.error('Error updating task:', error)
+            }
+        } catch (error) {
             console.error('Error updating task:', error)
-            // Optional: rollback on error
+        } finally {
+            setUpdatingTaskId(null)
         }
-    } catch (error) {
-        console.error('Error updating task:', error)
-    } finally {
-        setUpdatingTaskId(null)
     }
-}
 
     const handleDeleteTask = async (taskId: string) => {
         setDeletingTaskId(taskId)
@@ -315,6 +416,52 @@ const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React
                 return { bg: 'bg-gray-100', text: 'text-gray-700', icon: '⏱️' }
             default:
                 return { bg: 'bg-gray-50', text: 'text-gray-700', icon: '' }
+        }
+    }
+
+    const formatDueDate = (dueDate: string, status: string) => {
+        if (!dueDate) return 'No due date'
+        
+        // For completed tasks, just show the due date
+        if (status === 'completed') {
+            const due = new Date(dueDate)
+            const options: Intl.DateTimeFormatOptions = { 
+                month: 'short', 
+                day: 'numeric',
+                year: due.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+            }
+            return `Due ${due.toLocaleDateString('en-US', options)}`
+        }
+        
+        // For pending tasks, show relative dates
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        
+        const due = new Date(dueDate)
+        due.setHours(0, 0, 0, 0)
+        
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        
+        const yesterday = new Date(today)
+        yesterday.setDate(yesterday.getDate() - 1)
+        
+        if (due.getTime() === today.getTime()) {
+            return 'Due today - Hurry up!'
+        } else if (due.getTime() === tomorrow.getTime()) {
+            return 'Due tomorrow'
+        } else if (due.getTime() === yesterday.getTime()) {
+            return 'Due yesterday'
+        } else if (due < today) {
+            const daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24))
+            return `Overdue by ${daysOverdue} day${daysOverdue > 1 ? 's' : ''}`
+        } else {
+            const options: Intl.DateTimeFormatOptions = { 
+                month: 'short', 
+                day: 'numeric',
+                year: due.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
+            }
+            return `Due ${due.toLocaleDateString('en-US', options)}`
         }
     }
 
@@ -527,11 +674,18 @@ const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React
                             filteredTasks.map((task: any) => {
                                 const priorityColor = getPriorityColor(task.priority)
                                 const statusColor = getStatusColor(task.status)
+                                const dueText = formatDueDate(task.due_date, task.status)
+                                const isTodayDue = task.status === 'pending' && dueText.includes('Due today')
+                                const isOverdue = task.status === 'pending' && (dueText.includes('Overdue') || dueText.includes('Due yesterday'))
 
                                 return (
                                     <div
                                         key={task.id}
-                                        className="group px-6 py-5 hover:bg-gray-50 transition-all duration-200 cursor-pointer"
+                                        className={`group px-6 py-5 hover:bg-gray-50 transition-all duration-200 cursor-pointer ${
+                                            task.status !== 'completed' && isTodayDue ? 'bg-gradient-to-r from-amber-50/50 to-white border-l-4 border-amber-500' : ''
+                                        } ${
+                                            task.status !== 'completed' && isOverdue ? 'bg-gradient-to-r from-red-50/50 to-white border-l-4 border-red-500' : ''
+                                        }`}
                                         onClick={() => handleTaskClick(task.id)}
                                     >
                                         <div className="flex items-start gap-4">
@@ -570,6 +724,13 @@ const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React
                                                             <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${priorityColor.bg} ${priorityColor.text}`}>
                                                                 {priorityColor.icon} {task.priority} priority
                                                             </span>
+                                                            {task.status !== 'completed' && (isTodayDue || isOverdue) && (
+                                                                <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${
+                                                                    isTodayDue ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                                                                }`}>
+                                                                    {isTodayDue ? '🔥 Due Today!' : '⚠️ Overdue!'}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <p className="text-sm text-gray-600 line-clamp-2">
                                                             {task.description || 'No description provided'}
@@ -608,11 +769,13 @@ const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React
                                                                 <Calendar className="h-3 w-3 text-gray-500" />
                                                             </div>
                                                             <span className="font-medium">Due:</span>
-                                                            <span className={`${new Date(task.due_date) < new Date() && !task.completed ? 'text-red-600 font-semibold' : 'text-gray-800'}`}>
-                                                                {new Date(task.due_date).toLocaleDateString('en-US', {
-                                                                    month: 'short',
-                                                                    day: 'numeric'
-                                                                })}
+                                                            <span className={`font-semibold ${
+                                                                task.status === 'completed' ? 'text-gray-600' :
+                                                                isTodayDue ? 'text-amber-600' :
+                                                                isOverdue ? 'text-red-600' :
+                                                                'text-gray-800'
+                                                            }`}>
+                                                                {dueText}
                                                             </span>
                                                         </div>
                                                     )}
