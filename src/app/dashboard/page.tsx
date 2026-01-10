@@ -262,7 +262,7 @@ const toggleTaskCompletion = async (taskId: string, completed: boolean, e: React
         if (userRole === 'member') {
             return task.assigned_to === currentUserId
         }
-        else if (userRole === 'sales_admin' || userRole === 'production_admin') {
+        else if (userRole === 'production_admin') {
             return true
         }
         return false
