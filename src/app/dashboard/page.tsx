@@ -785,24 +785,6 @@ export default function Dashboard() {
 
                                         {/* Action Buttons */}
                                         <div className="flex items-center justify-between mt-4">
-                                            <div className="flex items-center gap-3">
-                                                {canEditTask() && (
-                                                    <button
-                                                        onClick={(e) => handleEditTask(task.id, e)}
-                                                        className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-black hover:bg-gray-100 rounded-lg transition-colors"
-                                                    >
-                                                        <Edit className="h-4 w-4" />
-                                                        Edit
-                                                    </button>
-                                                )}
-
-                                                {userRole === 'sales_admin' && (
-                                                    <span className="text-xs text-gray-500 px-3 py-1.5 bg-gray-50 rounded-lg">
-                                                        Can assign but not delete
-                                                    </span>
-                                                )}
-                                            </div>
-
                                             {canDeleteTask() && (
                                                 <div className="relative">
                                                     {showDeleteConfirm === task.id ? (
